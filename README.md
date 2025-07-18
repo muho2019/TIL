@@ -8,3 +8,4 @@
 - [코드와 함께 보는 클래스 로딩 & 객체 생성](/Java/JVM/Class-Loading-and-Object-With-Code.md)
 - [클래스 로더](/Java/JVM/Class-Loader.md)
 - [가비지 컬렉터](/Java/JVM/Garbage-Collector.md)
+- [클래식 가비지 컬렉터](/Java/JVM/Classic-Garbage-Collector.md)
