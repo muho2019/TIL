@@ -66,6 +66,24 @@ else {
 
 ## resize 함수
 
+```java
+else if ((newCap = oldCap << 1) < MAXIMUM_CAPACITY &&
+          oldCap >= DEFAULT_INITIAL_CAPACITY)
+  newThr = oldThr << 1; // double threshold
+```
+
+- newCap은 기존 cap의 두 배를 할당합니다. (resize 함수의 기본 목적)
+- 조건절을 만족시키는 경우 newThr도 기존 threshold의 두 배를 할당합니다.
+
+```java
+else if (oldThr > 0) // initial capacity was placed in threshold
+  newCap = oldThr;
+```
+
+- HashMap 객체를 생성할 때 초기 capacity를 설정한 경우에 동작하는 코드입니다.
+- 해당 생성자에서는 실제로 table 배열을 생성하지 않고 계산된 capacity를 threshold에 임시 저장합니다. (생성자: `public HashMap(int initialCapacity, float loadFactor)`)
+- threshold에 임시로 저장된 capacity를 실제로 사용하기 위해 newCap에 할당합니다.
+
 ## hash 함수
 
 ```java
@@ -79,3 +97,5 @@ static final int hash(Object key) {
 - 그 이유는 HashMap의 버킷 인덱스를 선택할 때 `putVal` 함수에서 본 것 처럼 `(n - 1)`과 AND 비트 연산을 하게 되는데 이때 이 연산에서는 항상 상위 비트가 버려지게 됩니다.
 - 그래서 hash 함수에서는 상위 비트도 인덱스를 선택할 때 영향을 미치게 하기 위하여 기존 해시값의 상위 비트(`h >>> 16`의 결과)를 기존 해시값과 xor 연산하게 된 것입니다.
 - xor 연산을 선택한 이유는 비트 연산자 중 가장 고른 비트 분포를 보장하기 때문입니다.
+
+## tableSizeFor 함수
