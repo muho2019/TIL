@@ -84,6 +84,16 @@ else if (oldThr > 0) // initial capacity was placed in threshold
 - 해당 생성자에서는 실제로 table 배열을 생성하지 않고 계산된 capacity를 threshold에 임시 저장합니다. (생성자: `public HashMap(int initialCapacity, float loadFactor)`)
 - threshold에 임시로 저장된 capacity를 실제로 사용하기 위해 newCap에 할당합니다.
 
+```java
+@SuppressWarnings({"rawtypes","unchecked"})
+Node<K,V>[] newTab = (Node<K,V>[])new Node[newCap];
+```
+
+- 자바에서는 제네릭 타입의 배열을 생성할 수 없습니다.
+- 그래서 제네릭이 아닌 Node 배열을 생성합니다. 이때 rawtypes 경고가 발생합니다. rawtypes는 제네릭 타입에서 타입 매개변수를 생략한 형태입니다.
+- 생성한 Node 배열을 제네릭 타입으로 강제 캐스팅하여 변수에 할당합니다. 이때 unchecked 경고가 발생합니다. unchecked는 컴파일러가 타입 안전성을 확인할 수 없는 연산에 대한 경고입니다.
+  - 하지만 HashMap 내부 코드에서는 K, V가 모두 일정한(동일한) 타입이기 때문에 타입 안정성은 보장이 됩니다.
+
 ## hash 함수
 
 ```java
