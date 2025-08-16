@@ -94,6 +94,48 @@ Node<K,V>[] newTab = (Node<K,V>[])new Node[newCap];
 - 생성한 Node 배열을 제네릭 타입으로 강제 캐스팅하여 변수에 할당합니다. 이때 unchecked 경고가 발생합니다. unchecked는 컴파일러가 타입 안전성을 확인할 수 없는 연산에 대한 경고입니다.
   - 하지만 HashMap 내부 코드에서는 K, V가 모두 일정한(동일한) 타입이기 때문에 타입 안정성은 보장이 됩니다.
 
+```java
+else { // preserve order
+    Node<K,V> loHead = null, loTail = null;
+    Node<K,V> hiHead = null, hiTail = null;
+    Node<K,V> next;
+    do {
+        next = e.next;
+        if ((e.hash & oldCap) == 0) {
+            if (loTail == null)
+                loHead = e;
+            else
+                loTail.next = e;
+            loTail = e;
+        }
+        else {
+            if (hiTail == null)
+                hiHead = e;
+            else
+                hiTail.next = e;
+            hiTail = e;
+        }
+    } while ((e = next) != null);
+    if (loTail != null) {
+        loTail.next = null;
+        newTab[j] = loHead;
+    }
+    if (hiTail != null) {
+        hiTail.next = null;
+        newTab[j + oldCap] = hiHead;
+    }
+}
+```
+
+- 연결 리스트인 경우
+- loHead, loTail: 기존 인덱스를 사용하는 경우
+- hiHead, hiTail: 새로운 인덱스를 사용하는 경우
+  - 새로운 인덱스는 기존 인덱스에 비해 1비트 더 큰 인덱스를 사용할 수 있습니다. 왜냐하면 capacity가 기존의 2배가 되었기 때문입니다.
+- `(e.hash & oldCap) == 0`
+  - 기존 인덱스를 사용하는 경우를 판단하는 조건입니다.
+  - oldCap은 newCap에 비해 1비트 작은 수입니다. 만약 oldCap이 16일 때, hash가 5라면 이 두 수의 `&` 결과는 0이 나오게 됩니다. (oldCap: 10000(2), hash: 00101(2)) hash가 21이라면 이 두 수의 `&` 결과는 0보다 큰 값(16)이 나오게 됩니다. (oldCap: 10000(2), hash: 10101(2))
+  - 이는 capacity가 2의 거듭제곱이기 때문에 보장이 되는 연산 결과입니다.
+
 ## hash 함수
 
 ```java
