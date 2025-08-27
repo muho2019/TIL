@@ -26,7 +26,7 @@
 - 기본적으로 싱글톤 패턴으로 생성 (하나의 인스턴스만 존재)
 - 의존성 주입을 통해 다른 빈들과 연결됨
 
-일반적으로 `@Component`, `@Service`, `@Repository`, `@Controller`와 같은 어노테이션을 통해 클래스를 빈으로 등록합니다.
+일반적으로 스테레오타입 어노테이션(`@Component`, `@Service`, `@Repository`, `@Controller`)을 통해 클래스를 빈으로 등록합니다.
 
 ### 빈 스코프 Bean Scope
 
@@ -76,5 +76,168 @@ public class UserService {
     // public UserService(UserRepository userRepository) {
     //     this.userRepository = userRepository;
     // }
+}
+```
+
+## @Configuration
+
+`@Configuration`은 **스프링 설정 클래스**를 나타내는 어노테이션입니다. 일반적으로 스테레오타입 어노테이션을 이용한 클래스(컨트롤러, 서비스, 레포지토리)를 제외한 클래스 또는 복잡한 생성 로직이 필요한 클래스들의 빈 등록 시 사용합니다.
+
+**특징**
+
+- 빈 등록, 관리
+  - `@Bean` 어노테이션을 사용하여 빈을 정의합니다.
+- 싱글톤 보장
+- 의존성 주입
+  - `@Bean` 메서드의 파라미터를 통해 이루어지는 것이 가장 일반적이고 권장되는 방법입니다.
+
+```java
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+// 이 클래스가 스프링 설정 클래스임을 명시
+@Configuration
+public class AppConfig {
+
+    // "myService"라는 이름의 빈을 정의
+    @Bean
+    public MyService myService() {
+        return new MyService(); // MyService 객체를 스프링 빈으로 등록
+    }
+
+    // "myRepository"라는 이름의 빈을 정의
+    @Bean
+    public MyRepository myRepository() {
+        return new MyRepository();
+    }
+}
+```
+
+```java
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+// 데이터베이스 연결을 담당하는 클래스라고 가정
+class DataSource {
+    public void connect() {
+        System.out.println("데이터베이스에 연결되었습니다.");
+    }
+}
+
+// 데이터를 저장하는 리포지토리 클래스라고 가정
+class UserRepository {
+    private final DataSource dataSource;
+
+    // 생성자 주입을 통해 DataSource 의존성 주입
+    public UserRepository(DataSource dataSource) {
+        this.dataSource = dataSource;
+    }
+}
+
+@Configuration
+public class AppConfig {
+
+    // 1. DataSource 빈 정의
+    @Bean
+    public DataSource dataSource() {
+        return new DataSource();
+    }
+
+    // 2. UserRepository 빈 정의
+    //    이 메서드는 파라미터로 DataSource를 받습니다.
+    //    스프링 컨테이너가 AppConfig.dataSource() 메서드를 호출하여
+    //    생성된 DataSource 빈을 자동으로 이 파라미터에 주입해 줍니다.
+    @Bean
+    public UserRepository userRepository(DataSource dataSource) {
+        // 주입받은 DataSource 빈을 사용하여 UserRepository 객체를 생성
+        return new UserRepository(dataSource);
+    }
+}
+```
+
+### @Value
+
+애플리케이션 설정 파일(`application.properties` 등)에 정의된 값을 `@Bean` 메서드에 주입하여 구성할 수 있습니다.
+
+```java
+@Configuration
+public class S3Config {
+
+    @Value("${cloud.aws.s3.bucket-name}")
+    private String bucketName;
+
+    @Value("${cloud.aws.credentials.access-key}")
+    private String accessKey;
+
+    @Bean
+    public AmazonS3 s3Client() {
+        // @Value로 주입된 값을 사용하여 빈 생성
+        return AmazonS3ClientBuilder.standard()
+                                     .withRegion(Regions.AP_NORTHEAST_2)
+                                     .withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(accessKey, "secret-key")))
+                                     .build();
+    }
+}
+```
+
+### @Profile
+
+개발, 테스트, 운영 등 환경에 따라 다른 빈을 구성해야 할 때 `@Profile`을 사용할 수 있습니다.
+
+```java
+// 개발 환경에서만 활성화되는 빈
+@Configuration
+@Profile("dev")
+public class DevConfig {
+    @Bean
+    public DatabaseConnector h2DatabaseConnector() {
+        return new H2DatabaseConnector();
+    }
+}
+
+// 운영 환경에서만 활성화되는 빈
+@Configuration
+@Profile("prod")
+public class ProdConfig {
+    @Bean
+    public DatabaseConnector mysqlDatabaseConnector() {
+        return new MySQLDatabaseConnector();
+    }
+}
+```
+
+### @Import
+
+하나의 `@Configuration` 클래스로 구성을 하다보면 너무 커지고 복잡해지게 됩니다. 이때 **관심사의 분리**를 위하여 분야별로 `@Configuration` 클래스를 따로 구성해주는 것이 좋습니다. 이럴 때 `@Import` 어노테이션으로 여러 `@Configuration` 클래스를 결합할 수 있습니다.
+
+물론 결합해주지 않아도 컴포넌트 스캔을 통해 아무런 문제없이 구성이 등록될 수도 있습니다. 하지만 다음과 같은 경우에는 `@Import`를 사용하여 결합해주는 것이 좋습니다.
+
+- `@Configuration` 클래스가 컴포넌트 스캔 범위를 벗어난 경우 (메인 패키지 밖에 있는 라이브러리나 모듈의 구성 클래스를 가져와야 할 때)
+- 명시적인 의존 관계를 표현할 때 (특정 `@Configuration` 클래스가 다른 설정에 의존하고 있다는 것을 명시적으로 표현)
+
+```java
+// Database 관련 설정
+@Configuration
+public class DatabaseConfig {
+    @Bean
+    public DataSource dataSource() {
+        // ...
+    }
+}
+
+// Security 관련 설정
+@Configuration
+public class SecurityConfig {
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        // ...
+    }
+}
+
+// 메인 설정 클래스에서 분리된 설정들을 결합
+@Configuration
+@Import({DatabaseConfig.class, SecurityConfig.class})
+public class AppConfig {
+    // 애플리케이션의 핵심 로직 관련 빈들
 }
 ```
