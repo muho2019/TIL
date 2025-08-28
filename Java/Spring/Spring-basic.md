@@ -45,9 +45,10 @@
 @Scope("prototype")
 ```
 
-## 의존관계 주입 방법
+## 의존성 주입 방법
 
 - 생성자 주입 (권장)
+  - 의존성 주입된 객체는 불변해야 하므로 생성자 주입을 권장
 - Setter 주입
 - 필드 주입
 
@@ -76,6 +77,198 @@ public class UserService {
     // public UserService(UserRepository userRepository) {
     //     this.userRepository = userRepository;
     // }
+}
+```
+
+### 다형성으로 구현된 빈의 의존성 주입 방법
+
+**조회 대상 빈이 2개 이상일 때 해결 방법:**
+
+- 필드/파라미터명 매칭
+- `@Qualifier`
+- `@Primary`
+- 컬렉션 이용
+
+#### 필드/파라미터명 매칭
+
+구체 클래스의 이름으로 필드/파라미터명으로 설정하면 해당 타입의 객체가 주입됩니다.
+
+**장점:**
+
+- 코드가 간결해집니다. `@Qualifier`와 같은 어노테이션이 필요하지 않기 때문입니다.
+
+**단점:**
+
+- 주입받는 변수명이 구체 클래스에 의존하기 때문에 코드가 유연하지 못하고 결합도가 높아집니다. 추후에 주입받을 객체가 다른 타입의 구체 클래스로 변경되면 클라이언트 코드도 변경해야 하므로 OCP(개방-폐쇄 원칙)에 위배될 수 있습니다.
+
+```java
+// SmtpEmailSender.java
+@Service
+public class SmtpEmailSender implements EmailSender {
+    // ...
+}
+
+// MockEmailSender.java
+@Service
+public class MockEmailSender implements EmailSender {
+    // ...
+}
+
+// 서비스 클래스에서 주입
+@Service
+public class UserService {
+    // 필드명(파라미터명)을 구체 클래스 이름의 첫 글자를 소문자로 바꾼 형태로 설정
+    private final EmailSender smtpEmailSender;
+
+    // @Qualifier 없이도 SmtpEmailSender 빈을 주입받음
+    @Autowired
+    public UserService(EmailSender smtpEmailSender) {
+        this.smtpEmailSender = smtpEmailSender;
+    }
+}
+```
+
+```java
+@Autowired
+private DiscountPolicy rateDiscountPolicy // RateDiscountPolicy가 주입됨
+```
+
+#### `@Qualifier`
+
+`@Qualifier`는 '자격' 또는 '한정자'라는 의미로, 주입할 빈의 이름을 명시적으로 지정하는 데 사용됩니다. 가장 일반적으로 사용하는 방법입니다.
+
+**장점:**
+
+- 명확한 의도
+  - 주입하려는 빈의 이름이 명시적으로 드러나기 때문에 코드의 가독성을 높이고 어떤 빈이 주입되는지 쉽게 파악됩니다.
+- 유연성
+  - 주입되는 객체가 다른 빈으로 변경되면 `@Qualifier` 이름만 변경하면 되므로 코드 수정이 유연합니다.
+
+**단점:**
+
+- 결합도
+  - 필드/파라미터명으로 매칭하는 경우와 마찬가지로 특정 빈의 이름에 의존하기 때문에 결합도가 높아집니다.
+
+```java
+// SmtpEmailSender.java
+@Service("smtpEmailSender") // 빈 이름 지정
+public class SmtpEmailSender implements EmailSender {
+    // ...
+}
+
+// MockEmailSender.java
+@Service("mockEmailSender") // 빈 이름 지정
+public class MockEmailSender implements EmailSender {
+    // ...
+}
+
+// 서비스 클래스에서 주입
+@Service
+public class UserService {
+    private final EmailSender emailSender;
+
+    @Autowired
+    public UserService(@Qualifier("smtpEmailSender") EmailSender emailSender) {
+        this.emailSender = emailSender;
+    }
+}
+```
+
+```java
+@Component
+@Qualifier("mainDiscountPolicy")
+public class RateDiscountPolicy implements DiscountPolicy {}
+
+// 주입
+@Autowired
+public OrderServiceImpl(MemberRepository memberRepository, @Qualifier("mainDiscountPolicy") DiscountPolicy discountPolicy) {
+    this.memberRepository = memberRepository;
+    this.discountPolicy = discountPolicy;
+}
+```
+
+#### `@Primary`
+
+`@Primary`는 여러 빈 중 우선적으로 주입될 빈을 지정합니다. `@Qualifier` 없이 주입될 기본 빈을 선택하는 방법입니다.
+
+**장점:**
+
+- 간결성
+- 기본값 설정
+
+**단점:**
+
+- 모호성
+  - `@Primary`가 설정된 빈을 찾아보지 않는 이상 어떤 빈이 주입되는지 알 수 없습니다. 이는 가독성을 해칠 수 있습니다.
+- 제한적인 선택
+  - 다른 빈을 선택해야 하는 경우에는 결국 `@Qualifier`를 사용해야 합니다.
+- 잠재적 충돌
+  - `@Primary` 빈이 없거나 여러 개일 경우 스프링이 어떤 빈을 선택할지 결정하지 못해 오류가 발생할 수 있습니다.
+
+```java
+// SmtpEmailSender.java
+@Service
+public class SmtpEmailSender implements EmailSender {
+    // ...
+}
+
+// MockEmailSender.java
+@Service
+@Primary // 기본 빈으로 설정
+public class MockEmailSender implements EmailSender {
+    // ...
+}
+
+// 서비스 클래스에서 주입 (별도의 @Qualifier 없이 @Primary 빈이 주입됨)
+@Service
+public class UserService {
+    private final EmailSender emailSender;
+
+    // 스프링이 @Primary가 붙은 MockEmailSender를 찾아 주입
+    @Autowired
+    public UserService(EmailSender emailSender) {
+        this.emailSender = emailSender;
+    }
+}
+```
+
+#### 컬렉션 이용
+
+동일한 인터페이스를 구현한 모든 빈을 주입받아야 할 때 리스트를 사용합니다.
+
+```java
+// MessageHandler.java (인터페이스)
+public interface MessageHandler {
+    void handle(String message);
+}
+
+// SmsHandler.java
+@Service("smsHandler")
+public class SmsHandler implements MessageHandler {
+    // ...
+}
+
+// EmailHandler.java
+@Service("emailHandler")
+public class EmailHandler implements MessageHandler {
+    // ...
+}
+
+// 모든 MessageHandler를 주입받아 사용
+@Service
+public class MessageService {
+    private final List<MessageHandler> handlers;
+
+    @Autowired
+    public MessageService(List<MessageHandler> handlers) {
+        this.handlers = handlers; // [SmsHandler, EmailHandler]가 주입됨
+    }
+
+    public void processMessage(String message) {
+        for (MessageHandler handler : handlers) {
+            handler.handle(message);
+        }
+    }
 }
 ```
 
@@ -241,3 +434,18 @@ public class AppConfig {
     // 애플리케이션의 핵심 로직 관련 빈들
 }
 ```
+
+## 컴포넌트 스캔 Component Scan
+
+컴포넌트 스캔은 스프링 프레임워크가 자동으로 빈 등록을 해주는 기능입니다.
+
+스테레오타입 어노테이션을 등록한 클래스는 컴포넌트 스캔의 대상이 됩니다. 또한 `@Configuration` 역시 컴포넌트 스캔의 대상입니다.
+
+컴포넌트 스캔은 `@SpringBootApplication` 어노테이션이 등록된 클래스의 경로부터 시작하여 그 하위의 모든 패키지를 스캔합니다.
+
+`@ComponentScan` 어노테이션을 이용하여 필터링을 지정할 수 있습니다. 하지만 기본기능 그대로 사용하는 것이 가장 안전합니다.
+
+**필터 종류:**
+
+- `includeFilters`: 컴포넌트 스캔 대상을 추가로 지정
+- `excludeFilters`: 컴포넌트 스캔에서 제외할 대상으로 지정
