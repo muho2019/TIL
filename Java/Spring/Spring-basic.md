@@ -34,6 +34,7 @@
 
 - **싱글톤 (Singleton)**: 컨테이너당 하나의 인스턴스만 생성
 - **프로토타입 (Prototype)**: 요청할 때마다 새로운 인스턴스 생성
+  - 프로토타입의 빈은 스프링 컨테이너가 초기화까지만 책임진다. 따라서 종료 로직은 실행되지 않는다.
 - **리퀘스트 (Request)**: HTTP 요청 하나당 하나의 인스턴스 생성
 - **세션 (Session)**: HTTP 세션 하나당 하나의 인스턴스 생성
 - **애플리케이션 (Application)**: 서블릿 컨텍스트당 하나의 인스턴스 생성
@@ -272,6 +273,97 @@ public class MessageService {
 }
 ```
 
+### 의존성 주입 생명주기 불일치 문제
+
+만약 싱글톤 빈에 리퀘스트 스코프 빈을 주입하려고 하면 문제가 발생합니다. 이 문제를 해결하기 위해서는 **Provider** 또는 **Scoped Proxy**를 이용합니다.
+
+#### Provider (권장)
+
+싱글톤 빈은 `Provider`를 가지고 있다가, 실제로 리퀘스트 스코프 빈이 필요할 때 `provider.get()`을 통해 빈을 찾아와 사용합니다. 코드가 명시적이라 의존성 탐색(DL, Dependency Lookup)이 언제 일어나는지 명확하게 알 수 있습니다.
+
+```java
+// 리퀘스트 스코프 빈
+import org.springframework.context.annotation.Scope;
+import org.springframework.stereotype.Component;
+import java.util.UUID;
+
+@Component
+@Scope("request") // 이 빈은 HTTP 요청마다 새로 생성됩니다.
+public class MyRequestBean {
+
+    private final String uuid = UUID.randomUUID().toString();
+
+    public String getUuid() {
+        return uuid;
+    }
+}
+
+// 싱글톤 서비스
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import jakarta.inject.Provider; // jakarta.inject.Provider 또는 javax.inject.Provider
+
+@Service
+public class SingletonService {
+
+    // MyRequestBean을 직접 주입받는 대신, Provider를 주입받습니다.
+    private final Provider<MyRequestBean> requestBeanProvider;
+
+    @Autowired
+    public SingletonService(Provider<MyRequestBean> requestBeanProvider) {
+        this.requestBeanProvider = requestBeanProvider;
+    }
+
+    public void logRequestUuid() {
+        // 이 메서드가 호출될 때! 실제 Request Bean을 찾아서 가져옵니다. (DL)
+        MyRequestBean requestBean = requestBeanProvider.get();
+        System.out.println("Current Request UUID: " + requestBean.getUuid());
+    }
+}
+```
+
+#### Scoped Proxy
+
+이 방법은 리퀘스트 스코프 빈에 프록시 설정을 추가하여, 마치 일반 빈처럼 주입해서 사용할 수 있습니다. 싱글톤 빈에 주입될 때는 프록시 객체가 주입되고 실제 빈을 사용할 때 프록시가 실제 빈을 찾아 메서드 호출을 위임합니다.
+
+```java
+// 리퀘스트 스코프 빈
+import org.springframework.context.annotation.Scope;
+import org.springframework.context.annotation.ScopedProxyMode;
+import org.springframework.stereotype.Component;
+import java.util.UUID;
+
+@Component
+@Scope(value = "request", proxyMode = ScopedProxyMode.TARGET_CLASS) // 프록시 모드 설정
+public class MyRequestBean {
+    // 내용은 동일
+    private final String uuid = UUID.randomUUID().toString();
+    public String getUuid() { return uuid; }
+}
+
+// 싱글톤 서비스
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+@Service
+public class SingletonService {
+
+    // 주입된 것은 진짜 MyRequestBean이 아닌, 가짜 프록시 객체입니다.
+    private final MyRequestBean requestBean;
+
+    @Autowired
+    public SingletonService(MyRequestBean requestBean) {
+        this.requestBean = requestBean;
+        System.out.println("Proxy class: " + requestBean.getClass()); // 실제 클래스가 아닌 CGLIB 프록시 클래스가 출력됨
+    }
+
+    public void logRequestUuid() {
+        // 프록시 객체의 메서드를 호출하면, 진짜 객체를 찾아 위임합니다.
+        System.out.println("Current Request UUID: " + requestBean.getUuid());
+    }
+}
+```
+
 ## @Configuration
 
 `@Configuration`은 **스프링 설정 클래스**를 나타내는 어노테이션입니다. 일반적으로 스테레오타입 어노테이션을 이용한 클래스(컨트롤러, 서비스, 레포지토리)를 제외한 클래스 또는 복잡한 생성 로직이 필요한 클래스들의 빈 등록 시 사용합니다.
@@ -449,3 +541,81 @@ public class AppConfig {
 
 - `includeFilters`: 컴포넌트 스캔 대상을 추가로 지정
 - `excludeFilters`: 컴포넌트 스캔에서 제외할 대상으로 지정
+
+## 빈의 생명주기 관리
+
+빈의 초기화 로직이 복잡한 경우 생성자에서 분리해주는 것이 좋습니다. 그리고 데이터베이스 커넥션 해제와 같이 빈의 소멸 로직이 필요한 경우도 있습니다.
+
+이럴 때에는 `@PostConstruct`, `@PreDestroy` 어노테이션을 사용합니다. 이 어노테이션은 스프링에 종속적이지 않기 때문에 자유롭게 사용이 가능합니다.
+
+- `@PostConstruct`: 의존성 주입이 완료된 후 호출되어야 하는 초기화 로직을 구현할 때 사용합니다.
+- `@PreDestroy`: 빈이 소멸되기 직전에 호출되어야 하는 종료 로직(cleanup)을 구현할 때 사용합니다.
+
+```java
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import org.springframework.stereotype.Component;
+
+@Component
+public class NetworkClient {
+
+    private String url;
+
+    // 1. 빈 생성 (생성자 호출)
+    public NetworkClient() {
+        System.out.println("생성자 호출, url = " + url);
+    }
+
+    // 외부에서 의존성 주입 (Setter)
+    public void setUrl(String url) {
+        this.url = url;
+    }
+
+    // 2. 의존관계 주입 완료 후 초기화 로직 수행
+    @PostConstruct
+    public void connect() {
+        System.out.println("초기화 로직... @PostConstruct 호출, url = " + url);
+        // 이 시점에는 url과 같은 의존성이 모두 주입되었음이 보장됩니다.
+        System.out.println("서버에 연결합니다: " + url);
+    }
+
+    // 3. 빈 소멸 전 종료 로직 수행
+    @PreDestroy
+    public void disconnect() {
+        System.out.println("종료 로직... @PreDestroy 호출");
+        System.out.println("서버 연결을 해제합니다: " + url);
+    }
+}
+```
+
+**빈 생명주기 콜백 순서:**
+
+- 스프링 컨테이너 생성 및 빈 설정 정보 로드
+- 빈 생성과 동시에 의존관계 주입 (생성자 호출 시점에 필요한 의존관계가 모두 해결되어 주입됩니다.)
+- 초기화 콜백 (`@PostConstruct` 등)
+  - 생성자에서 모든 의존성 주입이 보장되므로, 이 시점에서 주입된 의존성을 활용한 초기화 로직을 수행할 수 있습니다.
+- 빈 사용
+- 소멸 전 콜백 (`@PreDestroy` 등)
+- 스프링 컨테이너 종료
+
+### 그 외 방법
+
+`@PostConstruct`, `@PreDestroy` 어노테이션을 사용하는 방법은 외부 라이브러리의 클래스처럼 코드를 직접 수정할 수 없는 클래스에는 적용할 수 없습니다.
+
+이때에는 `@Bean`의 `initMethod`, `destroyMethod` 속성을 사용합니다.
+
+```java
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class AppConfig {
+
+    @Bean(initMethod = "connect", destroyMethod = "disconnect")
+    public NetworkClient networkClient() {
+        NetworkClient client = new NetworkClient();
+        client.setUrl("http://example.com");
+        return client;
+    }
+}
+```
