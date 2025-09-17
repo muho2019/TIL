@@ -27,6 +27,8 @@
 ## Spring
 
 - [스프링 기본](/Java/Spring/Spring-basic.md)
+- [스프링 데이터 JPA](/Java/Spring/Spring-Data-JPA.md)
+- [스프링 시큐리티](/Java/Spring/Spring-Security.md)
 
 ## 프로그래밍
 
